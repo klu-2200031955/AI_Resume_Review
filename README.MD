@@ -32,8 +32,8 @@ cancel - Cancel current operation
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/resume-ai-bot.git
-cd resume-ai-bot
+git clone https://github.com/klu-2200031955/AI_Resume_Review.git
+cd AI_Resume_Review
 ```
 
 ### 2. Create a virtual environment (optional but recommended)
