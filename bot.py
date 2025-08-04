@@ -148,7 +148,7 @@ def home():
                 <li>📊 <strong>Personalized Feedback:</strong> Detailed evaluation reports</li>
             </ul>
             
-            <a href="https://t.me/YourBotUsername" class="cta">
+            <a href="https://t.me/AIResumeReviewBot" class="cta">
                 Start Using Bot on Telegram
             </a>
             
