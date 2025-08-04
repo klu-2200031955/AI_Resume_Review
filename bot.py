@@ -18,6 +18,8 @@ from interview_module import generate_questions, evaluate_answers
 from utils import extract_text_from_pdf
 from typing import Dict, Any
 import asyncio
+from flask import Flask, render_template_string
+import threading
 
 load_dotenv()
 
@@ -37,6 +39,158 @@ user_data: Dict[int, Dict[str, Any]] = {}
 USER_DATA_DIR = Path("user_data")
 USER_DATA_DIR.mkdir(exist_ok=True)
 
+# Flask app for HTTP server
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    """Default route to keep the bot active"""
+    html_template = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Resume AI Bot</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .container {
+                background: white;
+                padding: 40px;
+                border-radius: 20px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                text-align: center;
+                max-width: 600px;
+                margin: 20px;
+            }
+            .bot-icon {
+                font-size: 4em;
+                margin-bottom: 20px;
+                animation: bounce 2s infinite;
+            }
+            @keyframes bounce {
+                0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+                40% { transform: translateY(-10px); }
+                60% { transform: translateY(-5px); }
+            }
+            h1 {
+                color: #333;
+                margin-bottom: 20px;
+                font-size: 2.5em;
+            }
+            .status {
+                display: inline-block;
+                padding: 10px 20px;
+                background: #4CAF50;
+                color: white;
+                border-radius: 50px;
+                margin: 20px 0;
+                font-weight: bold;
+            }
+            .features {
+                list-style: none;
+                padding: 0;
+                margin: 30px 0;
+            }
+            .features li {
+                padding: 10px 0;
+                border-bottom: 1px solid #eee;
+            }
+            .features li:last-child {
+                border-bottom: none;
+            }
+            .cta {
+                background: #667eea;
+                color: white;
+                padding: 15px 30px;
+                border-radius: 10px;
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 20px;
+                font-weight: bold;
+                transition: all 0.3s ease;
+            }
+            .cta:hover {
+                background: #764ba2;
+                transform: translateY(-2px);
+            }
+            .footer {
+                margin-top: 30px;
+                color: #666;
+                font-size: 0.9em;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="bot-icon">🤖</div>
+            <h1>Resume AI Bot</h1>
+            <div class="status">✅ Bot is Active</div>
+            
+            <p style="color: #666; font-size: 1.1em; margin: 20px 0;">
+                Your intelligent resume analysis and interview preparation assistant
+            </p>
+            
+            <ul class="features">
+                <li>📄 <strong>Resume Analysis:</strong> Get detailed feedback on your resume</li>
+                <li>🎯 <strong>HR Interviews:</strong> Practice behavioral and HR questions</li>
+                <li>💻 <strong>Technical Interviews:</strong> Prepare for technical challenges</li>
+                <li>🔥 <strong>Mixed Interviews:</strong> Combined HR and technical practice</li>
+                <li>📊 <strong>Personalized Feedback:</strong> Detailed evaluation reports</li>
+            </ul>
+            
+            <a href="https://t.me/YourBotUsername" class="cta">
+                Start Using Bot on Telegram
+            </a>
+            
+            <div class="footer">
+                <p>Server Status: Running ✅</p>
+                <p>Last Updated: {{ timestamp }}</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(html_template, timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"))
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy",
+        "bot": "active",
+        "timestamp": datetime.now().isoformat(),
+        "uptime": "running"
+    }
+
+@app.route('/status')
+def status():
+    """Status endpoint with basic bot statistics"""
+    return {
+        "bot_status": "active",
+        "active_users": len(user_data),
+        "timestamp": datetime.now().isoformat(),
+        "features": [
+            "Resume Analysis",
+            "HR Interview Practice",
+            "Technical Interview Practice",
+            "Personalized Feedback"
+        ]
+    }
+
+def run_flask():
+    """Run Flask server in a separate thread"""
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 def save_user_data(user_id: int, data: Dict[str, Any]) -> None:
     try:
@@ -479,48 +633,6 @@ async def ask_questions(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         )
         return ConversationHandler.END
 
-# async def generate_interview_questions(update: Update) -> None:
-#     """Generate interview questions and store them."""
-#     try:
-#         user_info = user_data[update.effective_user.id]
-        
-#         # Show generating message
-#         gen_msg = await update.message.reply_text("🤖 Generating personalized questions...")
-        
-#         # For mock interviews, we'll need to re-upload the resume if needed
-#         # Since we deleted the original file, we'll ask the user to upload again
-#         if not user_info.get("resume_path"):
-#             await update.message.reply_text(
-#                 "Please upload your resume again for the mock interview."
-#             )
-#             return UPLOAD_RESUME
-        
-#         from utils import extract_text_from_pdf
-#         resume_text = extract_text_from_pdf(user_info["resume_path"])
-        
-#         questions = await generate_questions(
-#             resume_text[:8000],  # Limit resume text
-#             user_info["role"],
-#             user_info["company"],
-#             user_info["interview_type"],
-#             user_info["num_questions"]
-#         )
-        
-#         await gen_msg.delete()
-        
-#         if isinstance(questions, str):  # Error case
-#             await update.message.reply_text(f"❌ Error generating questions: {questions}")
-#             return
-            
-#         user_data[update.effective_user.id]["questions"] = questions
-        
-#         # Start first question
-#         await ask_next_question(update)
-        
-#     except Exception as e:
-#         logger.error(f"Error generating questions: {e}")
-#         await update.message.reply_text("❌ Error generating questions. Please try again.")
-
 async def ask_next_question(update: Update) -> None:
     """Ask the next question in the interview."""
     try:
@@ -635,26 +747,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
     return ConversationHandler.END
 
-async def delete_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle the /delete_my_data command."""
-    user_id = update.effective_user.id
-    
-    # Delete from memory
-    if user_id in user_data:
-        # Clean up any files
-        if "resume_path" in user_data[user_id] and user_data[user_id]["resume_path"]:
-            delete_resume_file(user_data[user_id]["resume_path"])
-        del user_data[user_id]
-    
-    # Delete from storage
-    delete_user_data(user_id)
-    
-    await update.message.reply_text(
-        "🗑️ All your stored data has been deleted.\n\n"
-        "You can start fresh with /start",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
 async def send_long_message(update: Update, text: str, max_length: int = 4000, parse_mode: str = None) -> None:
     """Helper function to split long messages."""
     try:
@@ -717,7 +809,13 @@ def main() -> None:
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
 
-    app = ApplicationBuilder().token(token).build()
+    # Start Flask server in a separate thread
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("🌐 HTTP server started")
+
+    # Build Telegram bot application
+    telegram_app = ApplicationBuilder().token(token).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -734,15 +832,15 @@ def main() -> None:
         allow_reentry=True
     )
 
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("update_resume", update_resume))
-    app.add_handler(CommandHandler("view_data", view_data))
-    app.add_handler(CommandHandler("delete_my_data", delete_data))
-    app.add_handler(CommandHandler("update_job", update_job))
-    app.add_error_handler(error_handler)
+    telegram_app.add_handler(conv_handler)
+    telegram_app.add_handler(CommandHandler("update_resume", update_resume))
+    telegram_app.add_handler(CommandHandler("view_data", view_data))
+    telegram_app.add_handler(CommandHandler("delete_my_data", delete_data))
+    telegram_app.add_handler(CommandHandler("update_job", update_job))
+    telegram_app.add_error_handler(error_handler)
 
     logger.info("🤖 Resume AI Bot starting...")
-    app.run_polling(drop_pending_updates=True)
+    telegram_app.run_polling(drop_pending_updates=True)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
