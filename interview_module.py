@@ -4,10 +4,7 @@ import google.generativeai as genai
 from utils import extract_text_from_pdf
 from prompts import evaluate_answer_prompt
 from dotenv import load_dotenv
-from typing import Tuple, List, Optional, Dict, Any
-import asyncio
-from telegram import Update
-from telegram.ext import ContextTypes, ConversationHandler
+from typing import Tuple, List, Optional
 
 # Configure logging
 logging.basicConfig(
@@ -19,7 +16,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Configure Gemini AI
+# Configure Gemini AI with error handling
 try:
     genai.configure(
         api_key=API_KEY,
@@ -29,87 +26,7 @@ try:
     model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception as e:
     logger.error(f"Failed to configure Gemini AI: {e}")
-    raise
-
-async def conduct_interview(update: Update, context: ContextTypes.DEFAULT_TYPE, interview_type: str, num_questions: int) -> str:
-    """Main interview conduction function - returns report string."""
-    try:
-        # Get user data from the global user_data dict in bot.py
-        from bot import user_data
-        user_info = user_data.get(update.effective_user.id)
-        
-        if not user_info:
-            await update.message.reply_text("Session expired. Please start over with /start")
-            return "Session expired"
-
-        # Verify required fields
-        required_fields = ["resume_path", "role", "company"]
-        missing_fields = [field for field in required_fields if not user_info.get(field)]
-        
-        if missing_fields:
-            await update.message.reply_text(
-                f"Missing information: {', '.join(missing_fields)}. Please start over with /start"
-            )
-            return "Missing required information"
-
-        # Process resume
-        resume_text = await process_resume(update, user_info["resume_path"])
-        if not resume_text:
-            return "Failed to process resume"
-
-        # Generate questions
-        questions = await generate_questions(
-            resume_text, 
-            user_info["role"], 
-            user_info["company"], 
-            interview_type, 
-            num_questions
-        )
-        if isinstance(questions, str):  # Error case
-            await update.message.reply_text(questions)
-            return questions
-
-        # Collect answers
-        answers = await collect_answers(update, context, user_info["chat_id"], questions)
-        if isinstance(answers, str):  # Error case
-            await update.message.reply_text(answers)
-            return answers
-
-        # Generate report
-        report = await evaluate_answers(answers)
-        return report
-
-    except Exception as e:
-        logger.error(f"Unexpected error in conduct_interview: {e}", exc_info=True)
-        await update.message.reply_text(
-            "An unexpected error occurred during the interview."
-        )
-        return f"Interview error: {str(e)}"
-
-async def process_resume(update: Update, resume_path: str) -> Optional[str]:
-    """Process and validate resume file."""
-    try:
-        if not os.path.exists(resume_path):
-            await update.message.reply_text(
-                "Resume file not found. Please upload again with /start"
-            )
-            return None
-
-        resume_text = extract_text_from_pdf(resume_path)
-        if not resume_text:
-            await update.message.reply_text(
-                "Could not extract text from resume. Please upload a valid PDF."
-            )
-            return None
-            
-        return resume_text[:10000]  # Limit text length
-    
-    except Exception as e:
-        logger.error(f"Error processing resume: {e}")
-        await update.message.reply_text(
-            "Error processing your resume. Please try again with a different file."
-        )
-        return None
+    model = None
 
 async def generate_questions(
     resume_text: str,
@@ -120,6 +37,9 @@ async def generate_questions(
 ) -> List[str]:
     """Generate interview questions based on resume and job details."""
     try:
+        if not model:
+            return ["Unable to generate questions - AI service unavailable"]
+            
         # Determine question focus based on interview type
         if interview_type == "technical":
             focus = "technical skills, programming concepts, and problem-solving abilities"
@@ -178,70 +98,19 @@ Guidelines:
         questions = questions[:num_questions]
         
         if len(questions) < num_questions:
-            # Generate missing questions
-            missing = num_questions - len(questions)
-            for i in range(missing):
-                questions.append(f"Tell me about a challenging project you worked on related to {job_role}.")
+            # Add fallback questions
+            fallback_questions = create_sample_questions(job_role, interview_type, num_questions - len(questions))
+            questions.extend(fallback_questions)
         
         if not questions:
-            return "Error: Failed to generate valid interview questions."
+            return create_sample_questions(job_role, interview_type, num_questions)
             
         return questions
 
     except Exception as e:
         logger.error(f"Error generating questions: {e}")
-        return f"Error generating interview questions: {str(e)}"
-
-async def collect_answers(
-    update, 
-    context, 
-    chat_id: int, 
-    questions: List[str]
-) -> List[Tuple[str, str]]:
-    """Present questions to user and collect answers."""
-    answers = []
-    
-    try:
-        await update.message.reply_text(
-            f"🎯 Starting interview with {len(questions)} questions.\n"
-            "You have 2 minutes per question. Type your answer and press send.\n"
-            "Ready? Here we go!\n"
-        )
-        
-        for i, question in enumerate(questions, 1):
-            try:
-                await update.message.reply_text(
-                    f"📝 Question {i}/{len(questions)}:\n\n{question}\n\n"
-                    "⏰ You have 2 minutes to answer..."
-                )
-                
-                # Create a future to wait for the next message
-                answer_received = False
-                start_time = asyncio.get_event_loop().time()
-                timeout_seconds = 120  # 2 minutes
-                
-                # Simple polling approach for waiting for user response
-                while not answer_received and (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-                    await asyncio.sleep(1)  # Check every second
-                    
-                    # In a real implementation, you'd need a message queue or callback system
-                    # For now, we'll simulate getting the answer
-                    # This is a simplified version - you might need to implement proper message handling
-                
-                # For this fix, we'll assume we get the answer through the normal flow
-                # The actual message handling should be done in the conversation handler
-                answers.append((question, "Answer will be collected through conversation flow"))
-                    
-            except Exception as e:
-                logger.error(f"Error collecting answer for question {i}: {e}")
-                answers.append((question, "Error processing answer"))
-                await update.message.reply_text("Error occurred. Moving to next question...")
-                
-        return answers
-        
-    except Exception as e:
-        logger.error(f"Error collecting answers: {e}")
-        return f"Error during interview: {str(e)}"
+        # Return fallback questions instead of error string
+        return create_sample_questions(job_role, interview_type, num_questions)
 
 async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
     """Evaluate user answers and generate feedback report."""
@@ -249,17 +118,20 @@ async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
         if not answers:
             return "No answers to evaluate."
         
+        if not model:
+            return "AI evaluation service unavailable. Thank you for completing the interview!"
+        
         # Create individual evaluations
         evaluations = []
         total_score = 0
-        max_possible_score = len(answers) * 10  # Assuming 10 points per question
+        max_possible_score = len(answers) * 10
         
         for i, (question, answer) in enumerate(answers, 1):
             try:
-                if answer.lower() in ['no answer provided', 'time out - no answer received', 'error processing answer']:
+                if not answer or answer.lower() in ['no answer provided', 'time out']:
                     evaluation = {
                         'question': question,
-                        'answer': answer,
+                        'answer': answer or "No answer provided",
                         'feedback': "No valid answer was provided for this question.",
                         'score': 0
                     }
@@ -276,7 +148,7 @@ async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
                     )
                     
                     feedback = eval_response.text.strip()
-                    # Simple scoring based on answer length and relevance (basic heuristic)
+                    # Basic scoring heuristic
                     score = min(10, max(1, len(answer.split()) // 5)) if answer else 0
                     total_score += score
                     
@@ -293,13 +165,14 @@ async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
                 logger.error(f"Error evaluating answer {i}: {e}")
                 evaluations.append({
                     'question': question,
-                    'answer': answer,
+                    'answer': answer or "No answer",
                     'feedback': "Could not evaluate this answer due to technical issues.",
-                    'score': 0
+                    'score': 5  # Give partial credit
                 })
+                total_score += 5
         
         # Generate comprehensive report
-        answered_count = sum(1 for _, answer in answers if answer.lower() not in ['no answer provided', 'time out - no answer received'])
+        answered_count = sum(1 for _, answer in answers if answer and answer.lower() not in ['no answer provided', 'time out'])
         completion_rate = (answered_count / len(answers)) * 100
         
         report_parts = [
@@ -311,7 +184,7 @@ async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
             f"• Completion Rate: {completion_rate:.1f}%",
             f"• Overall Score: {total_score}/{max_possible_score} ({(total_score/max_possible_score)*100:.1f}%)",
             "",
-            "📝 DETAILED FEEDBACK:",
+            "🔍 DETAILED FEEDBACK:",
             "-" * 40
         ]
         
@@ -339,9 +212,8 @@ async def evaluate_answers(answers: List[Tuple[str, str]]) -> str:
         
     except Exception as e:
         logger.error(f"Error generating report: {e}")
-        return f"Error generating interview report: {str(e)}"
+        return f"Interview completed! Report generation encountered issues: {str(e)}"
 
-# Additional helper functions for better interview flow
 def create_sample_questions(job_role: str, interview_type: str, count: int) -> List[str]:
     """Create sample questions as fallback."""
     technical_questions = [
