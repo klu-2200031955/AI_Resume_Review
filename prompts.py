@@ -12,15 +12,24 @@ Evaluate the match and provide suggestions to improve the resume (skills, tools,
 
 def evaluate_answer_prompt(question, answer):
     return f"""
-You are an experienced interviewer.
+    You are an experienced interviewer and assessor. Please provide a short, structured evaluation.
 
-Question: {question}
-Candidate's Answer: {answer}
+    Question: {question}
+    Candidate's Answer: {answer}
 
-Evaluate this answer based on:
-- Relevance
-- Clarity
-- Technical depth
+    Requirements:
+    1) Give a one-line verdict of the answer quality.
+    2) Rate each dimension from 1-10: Relevance, Clarity, TechnicalDepth.
+    3) List up to 3 concise strengths as bullet points.
+    4) List up to 3 concise improvement suggestions as bullet points.
+    5) Provide a brief "Better Answer Outline" (3-5 bullet points the candidate could follow).
 
-Give constructive suggestions to improve it.
-"""
+    Output STRICTLY in this JSON schema (no extra text):
+    {{
+      "verdict": "<one line>",
+      "ratings": {{"Relevance": <int>, "Clarity": <int>, "TechnicalDepth": <int>}},
+      "strengths": ["...", "..."],
+      "improvements": ["...", "..."],
+      "better_outline": ["...", "...", "..."]
+    }}
+    """
