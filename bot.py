@@ -482,6 +482,15 @@ ADMIN_DASHBOARD_TEMPLATE = """
     <div class="container">
         <div class="card">
             <h2>Overview</h2>
+            <button id="broadcastBtn" style="
+                background:#667eea; 
+                color:white; 
+                border:none; 
+                padding:10px 20px; 
+                border-radius:8px; 
+                cursor:pointer; 
+                font-weight:bold;
+            ">📢 Broadcast</button>
             <div class="stats-grid">
                 <div class="stat-box">
                     <span class="stat-number">{{ total_users }}</span>
@@ -522,7 +531,33 @@ ADMIN_DASHBOARD_TEMPLATE = """
 
         <a href="{{ url_for('logout') }}" class="logout">🚪 Logout</a>
     </div>
-
+    <div id="broadcastModal" style="
+        display:none;
+        position:fixed;
+        top:0; left:0; width:100%; height:100%;
+        background:rgba(0,0,0,0.5);
+        justify-content:center;
+        align-items:center;
+        z-index:1000;
+    ">
+        <div style="
+            background:white; 
+            padding:25px; 
+            border-radius:12px; 
+            width:90%; 
+            max-width:500px;
+            box-shadow:0 4px 15px rgba(0,0,0,0.2);
+        ">
+            <h2>📢 Broadcast Message</h2>
+            <textarea id="broadcastText" placeholder="Type your message here..." 
+                style="width:100%; height:150px; margin-top:10px; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:1rem;"></textarea>
+            <div style="margin-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+                <button id="resetBtn" style="display:none; background:#f1c40f; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Reset</button>
+                <button id="cancelBtn" style="background:#e74c3c; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;">Cancel</button>
+                <button id="sendBtn" style="background:#2ecc71; color:white; border:none; padding:8px 16px; border-radius:6px; cursor:pointer;" disabled>Send</button>
+            </div>
+        </div>
+    </div>
     <script>
         let allUsers = [];
 
@@ -571,6 +606,91 @@ ADMIN_DASHBOARD_TEMPLATE = """
         });
 
         window.onload = loadUsers;
+    </script>
+    <script>
+        const broadcastBtn = document.getElementById("broadcastBtn");
+        const modal = document.getElementById("broadcastModal");
+        const textArea = document.getElementById("broadcastText");
+        const sendBtn = document.getElementById("sendBtn");
+        const cancelBtn = document.getElementById("cancelBtn");
+        const resetBtn = document.getElementById("resetBtn");
+
+        function updateButtonStates() {
+            const hasText = textArea.value.trim().length > 0;
+            sendBtn.disabled = !hasText;
+            resetBtn.style.display = hasText ? "inline-block" : "none";
+            cancelBtn.textContent = hasText ? "Cancel" : "Cancel";
+        }
+
+        function resetForm() {
+            textArea.value = "";
+            updateButtonStates();
+        }
+
+        function closeModal() {
+            modal.style.display = "none";
+            resetForm();
+        }
+
+        broadcastBtn.onclick = () => {
+            modal.style.display = "flex";
+            textArea.focus();
+        };
+
+        cancelBtn.onclick = () => {
+            if (textArea.value.trim().length > 0) {
+                // If there's text, ask for confirmation
+                if (confirm("Are you sure you want to cancel? Your message will be lost.")) {
+                    closeModal();
+                }
+            } else {
+                closeModal();
+            }
+        };
+
+        resetBtn.onclick = () => {
+            resetForm();
+            textArea.focus();
+        };
+
+        textArea.addEventListener("input", updateButtonStates);
+
+        sendBtn.onclick = async () => {
+            const message = textArea.value.trim();
+            if (!message) return;
+            
+            sendBtn.disabled = true;
+            sendBtn.textContent = "Sending...";
+            
+            try {
+                const res = await fetch("/admin/broadcast", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({message})
+                });
+                const data = await res.json();
+                alert(data.success ? "✅ Broadcast sent!" : "❌ Failed to send.");
+            } catch (err) {
+                alert("Error sending broadcast");
+            }
+            
+            closeModal();
+            sendBtn.textContent = "Send";
+            sendBtn.disabled = false;
+        };
+
+        // Close modal when clicking outside the content
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                if (textArea.value.trim().length > 0) {
+                    if (confirm("Are you sure you want to close? Your message will be lost.")) {
+                        closeModal();
+                    }
+                } else {
+                    closeModal();
+                }
+            }
+        });
     </script>
 </body>
 </html>
@@ -744,6 +864,25 @@ def get_user_detail(user_id):
     except Exception as e:
         logger.error(f"Error fetching user detail: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/admin/broadcast', methods=['POST'])
+@login_required
+def admin_broadcast():
+    data = request.get_json()
+    message = data.get('message', '').strip()
+    if not message:
+        return jsonify({'success': False, 'error': 'Empty message'}), 400
+
+    try:
+        # Broadcast to all Telegram users
+        all_users = users_collection.distinct("_id")
+        for user_id in all_users:
+            run_async(bot_app.bot.send_message(chat_id=user_id, text=f"📢 Broadcast:\n\n{message}"))
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Broadcast failed: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # ---------------------- SHORT LINK ----------------------
 @app.route('/r/<short_id>')
@@ -931,11 +1070,14 @@ def redirect_short(short_id):
             let seconds = {COUNTDOWN_SECONDS};
             function updateCountdown() {{
                 const countdownEl = document.getElementById("countdown");
+                const continueBtn = document.getElementById("continueBtn");
+
                 if (countdownEl) {{
                     countdownEl.innerText = seconds;
                 }}
+
                 if (seconds <= 0) {{
-                    window.location.href = "/view/{filename}";
+                    continueBtn.style.display = "inline-block";
                 }} else {{
                     seconds--;
                     setTimeout(updateCountdown, 1000);
@@ -969,6 +1111,22 @@ def redirect_short(short_id):
                 <h3>Your Report is Being Prepared</h3>
                 <div class="countdown">Ready in <span id="countdown">{COUNTDOWN_SECONDS}</span> seconds</div>
                 <p>While you wait, review the professional career guidance below.</p>
+                <button id="continueBtn" 
+                    onclick="window.location.href='/view/{filename}'"
+                    style="
+                        display:none;
+                        background:#28a745;
+                        color:white;
+                        padding:12px 24px;
+                        border:none;
+                        border-radius:8px;
+                        font-size:1rem;
+                        margin-top:10px;
+                        cursor:pointer;
+                        font-weight:bold;
+                    ">
+                    Continue →
+                </button>
             </div>
 
             <div class="content-section">
