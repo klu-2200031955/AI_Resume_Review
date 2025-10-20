@@ -678,7 +678,7 @@ Special thanks to:
 
 Need help?
 
-- **📧 Email**: support@yourbot.com
+- **📧 Email**: svptk12@gmail.com
 - **💬 Telegram Support**: [@AIResumeReviewSupportBot](https://t.me/AIResumeReviewSupportBot)
 - **🐛 Report Bugs**: [GitHub Issues](https://github.com/klu-2200031955/AI_Resume_Review/issues)
 - **💡 Feature Requests**: [GitHub Discussions](https://github.com/klu-2200031955/AI_Resume_Review/discussions)
