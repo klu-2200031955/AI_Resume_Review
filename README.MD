@@ -257,6 +257,11 @@ Access the comprehensive web interface:
 - **`/status`** - Real-time bot status and statistics
 - **`/health`** - Health check endpoint for monitoring
 
+### Admin Panel (Protected)
+- **`/admin/login`** - Admin authentication
+- **`/admin/dashboard`** - User analytics and management
+- **`/admin/broadcast`** - Send messages to all users
+
 ### Report Access
 - **`/r/{short_id}`** - Short link for interview reports
 - **`/view/{filename}`** - PDF report viewer
